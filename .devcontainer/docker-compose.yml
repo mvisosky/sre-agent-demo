@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .devcontainer
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspaces/sre-agent-demo:cached
+    command: sleep infinity
+    network_mode: service:postgres-pgvector
+    depends_on:
+      postgres-pgvector:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: jdbc:postgresql://localhost:5432/sre_agent_db
+      POSTGRES_USER: sre_user
+      POSTGRES_PASSWORD: sre_password

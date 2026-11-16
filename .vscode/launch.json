@@ -1,0 +1,63 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "SRE Agent App (PGVector - Port 8080)",
+      "request": "launch",
+      "mainClass": "com.example.sre.agent.SreAgentApplication",
+      "projectName": "sre-agent-app",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "java",
+      "name": "SRE Agent App (Local VectorStore / No Docker - Port 8080)",
+      "request": "launch",
+      "mainClass": "com.example.sre.agent.SreAgentApplication",
+      "projectName": "sre-agent-app",
+      "cwd": "${workspaceFolder}",
+      "args": "--spring.profiles.active=local",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "java",
+      "name": "Playbook RAG Service (PGVector - Port 8081)",
+      "request": "launch",
+      "mainClass": "com.example.sre.playbook.app.PlaybookRagApplication",
+      "projectName": "playbook-rag",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "java",
+      "name": "Playbook RAG Service (Local VectorStore / No Docker - Port 8081)",
+      "request": "launch",
+      "mainClass": "com.example.sre.playbook.app.PlaybookRagApplication",
+      "projectName": "playbook-rag",
+      "cwd": "${workspaceFolder}",
+      "args": "--spring.profiles.active=local",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run All Services (PGVector Mode - 8080 & 8081)",
+      "configurations": [
+        "Playbook RAG Service (PGVector - Port 8081)",
+        "SRE Agent App (PGVector - Port 8080)"
+      ]
+    },
+    {
+      "name": "Run All Services (Local No-Docker Mode - 8080 & 8081)",
+      "configurations": [
+        "Playbook RAG Service (Local VectorStore / No Docker - Port 8081)",
+        "SRE Agent App (Local VectorStore / No Docker - Port 8080)"
+      ]
+    }
+  ]
+}

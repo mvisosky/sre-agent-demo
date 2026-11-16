@@ -1,0 +1,9 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "automatic",
+  "maven.executable.path": "mvn",
+  "spring-boot.ls.java.vmargs": [
+    "-Xmx1G"
+  ],
+  "maven.view": "hierarchical"
+}

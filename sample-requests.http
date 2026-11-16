@@ -1,0 +1,80 @@
+### 1. Trigger Primary SRE Investigation via Alert Email Webhook (payment-service P1 Incident)
+POST http://localhost:8080/api/v1/webhooks/email
+Content-Type: application/json
+
+{
+  "messageId": "alert-20261116-001",
+  "from": "pagerduty-alerts@example.com",
+  "subject": "[CRITICAL / P1] payment-service HTTP 5xx Error Spike & Checkout Latency on pod payment-service-7d9f8b6c4-x2k9p (34.8%)",
+  "body": "Alert triggered at 2026-11-16T10:00:00Z.\nService: payment-service\nEnvironment: prod-us-east-1\nEndpoint: POST /api/v1/payments/charge\nSymptoms:\n- HTTP 5xx error rate exceeded 34% over the last 15 minutes.\n- p99 response latency jumped from 180ms to 5,150ms.\n- Multiple HikariPool-1 SQLTransientConnectionException connection timeout alerts observed.",
+  "headers": {
+    "X-Alert-Provider": "PagerDuty",
+    "X-Priority": "1"
+  }
+}
+
+### 2. Simulate Stage 1 Alert Flood (Pod & Metric Variation -> Caught Pre-LLM with 0 Gemini Calls)
+POST http://localhost:8080/api/v1/webhooks/email
+Content-Type: application/json
+
+{
+  "messageId": "alert-20261116-002",
+  "from": "pagerduty-alerts@example.com",
+  "subject": "[CRITICAL / P1] payment-service HTTP 5xx Error Spike & Checkout Latency on pod payment-service-7d9f8b6c4-z9m4q (41.2%)",
+  "body": "Alert triggered at 2026-11-16T10:00:15Z.\nService: payment-service\nEnvironment: prod-us-east-1\nEndpoint: POST /api/v1/payments/charge\nSymptoms:\n- HTTP 5xx error rate exceeded 41% over the last 15 minutes.",
+  "headers": {
+    "X-Alert-Provider": "PagerDuty",
+    "X-Priority": "1"
+  }
+}
+
+### 3. Simulate Stage 2 Alert Flood (Different Alert Rule / Subject for Same Service Outage -> Skips RAG & Tool Investigation)
+POST http://localhost:8080/api/v1/webhooks/email
+Content-Type: application/json
+
+{
+  "messageId": "alert-20261116-003",
+  "from": "datadog-monitors@example.com",
+  "subject": "[P1] HikariPool-1 Database Connection Pool Saturated on payment-service",
+  "body": "Monitor: HikariPool-1 Active Connections 20/20 in prod-us-east-1.\n148 threads awaiting DB connection on payment-service. Connection acquisition timeout > 5000ms on /api/v1/payments/charge.",
+  "headers": {
+    "X-Alert-Provider": "Datadog"
+  }
+}
+
+### 4. Inspect Active Alert Flood Deduplication Stats & Suppressed Counters
+GET http://localhost:8080/api/v1/webhooks/deduplication/stats
+
+### 5. Reset / Clear Alert Deduplication Window (For Demo Re-runs)
+DELETE http://localhost:8080/api/v1/webhooks/deduplication/cache
+
+### 6. Trigger SRE Investigation via Alert Email Webhook (order-service OOMKill & Lag)
+POST http://localhost:8080/api/v1/webhooks/email
+Content-Type: application/json
+
+{
+  "messageId": "alert-20261116-004",
+  "from": "prometheus-alertmanager@example.com",
+  "subject": "[P1] order-service CrashLoopBackOff (OOMKilled) and Kafka Consumer Lag > 45,000",
+  "body": "Alert: KubernetesPodCrashLooping & KafkaConsumerLagHigh\nNamespace: commerce-prod (prod-us-east-1)\nService: order-service\nDetails: 3 of 5 pods terminated with exit code 137 (OOMKilled). Kafka consumer group 'order-service-cg' lag on topic 'orders.created' is 48,500 and increasing.",
+  "headers": {
+    "X-Alert-Provider": "Alertmanager"
+  }
+}
+
+### 7. Ingest a Custom Service Playbook into PGVector RAG
+POST http://localhost:8080/api/v1/playbooks/ingest
+Content-Type: application/json
+
+{
+  "serviceName": "notification-service",
+  "title": "notification-service Incident Investigation Playbook",
+  "version": "1.0",
+  "markdownContent": "# notification-service Playbook\n\n## Investigation Steps\n1. Call `getServiceHealth(\"notification-service\")`.\n2. Call `getServiceMetrics(\"notification-service\", \"15m\")`.\n3. Call `queryServiceLogs(\"notification-service\", \"ERROR\", 20)`.\n4. Call `getDownstreamDependencyStatus(\"notification-service\")`.\n\n## Remediation\nIf SMTP relay rate limits are hit, switch to secondary SES provider."
+}
+
+### 8. Search Playbook Chunks via RAG
+GET http://localhost:8080/api/v1/playbooks/search?serviceName=payment-service&query=HikariPool+connection+timeout+5xx&topK=3
+
+### 9. List Generated Local Incident Reports
+GET http://localhost:8080/api/v1/reports

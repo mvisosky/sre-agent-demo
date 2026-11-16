@@ -1,0 +1,45 @@
+{
+  "name": "SRE Agent Demo (Java 25 + Maven + PGVector)",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "docker-compose.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "none",
+      "installMaven": "true",
+      "installGradle": "false"
+    }
+  },
+  "forwardPorts": [8080, 8081, 5432],
+  "portsAttributes": {
+    "8080": {
+      "label": "SRE Agent App",
+      "onAutoForward": "notify"
+    },
+    "8081": {
+      "label": "Playbook RAG Service",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL PGVector",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "maven.executable.path": "/usr/bin/mvn"
+      },
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vmware.vscode-boot-dev-pack",
+        "humao.rest-client"
+      ]
+    }
+  },
+  "remoteUser": "vscode"
+}

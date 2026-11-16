@@ -1,0 +1,69 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Docker: Start PostgreSQL PGVector",
+      "type": "shell",
+      "command": "docker compose up -d",
+      "problemMatcher": [],
+      "detail": "Starts the PostgreSQL 16 + pgvector container on port 5432"
+    },
+    {
+      "label": "Docker: Stop PostgreSQL PGVector",
+      "type": "shell",
+      "command": "docker compose down",
+      "problemMatcher": [],
+      "detail": "Stops the PostgreSQL 16 + pgvector container"
+    },
+    {
+      "label": "Run: SRE Agent App (PGVector - Port 8080)",
+      "type": "shell",
+      "command": "mvn spring-boot:run -pl sre-agent-app",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Runs sre-agent-app on http://localhost:8080 connected to PostgreSQL PGVector"
+    },
+    {
+      "label": "Run: SRE Agent App (Local Mode / No Docker - Port 8080)",
+      "type": "shell",
+      "command": "mvn spring-boot:run -pl sre-agent-app \"-Dspring-boot.run.profiles=local\"",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Runs sre-agent-app on http://localhost:8080 using in-memory SimpleVectorStore (no Docker required)"
+    },
+    {
+      "label": "Run: Playbook RAG Service (PGVector - Port 8081)",
+      "type": "shell",
+      "command": "mvn org.springframework.boot:spring-boot-maven-plugin:run -pl playbook-rag \"-Dspring-boot.run.main-class=com.example.sre.playbook.app.PlaybookRagApplication\"",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Runs standalone Playbook RAG service on http://localhost:8081"
+    },
+    {
+      "label": "Run: Playbook RAG Service (Local Mode / No Docker - Port 8081)",
+      "type": "shell",
+      "command": "mvn org.springframework.boot:spring-boot-maven-plugin:run -pl playbook-rag \"-Dspring-boot.run.main-class=com.example.sre.playbook.app.PlaybookRagApplication\" \"-Dspring-boot.run.profiles=local\"",
+      "isBackground": true,
+      "problemMatcher": [],
+      "detail": "Runs standalone Playbook RAG service on http://localhost:8081 using in-memory SimpleVectorStore"
+    },
+    {
+      "label": "Maven: Clean Install & Run Unit Tests",
+      "type": "shell",
+      "command": "mvn clean install",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$msCompile"],
+      "detail": "Builds and installs all modules into local Maven repository so sub-modules can be run independently"
+    },
+    {
+      "label": "Demo: Send Sample payment-service Alert Email Webhook",
+      "type": "shell",
+      "command": "Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/api/v1/webhooks/email' -ContentType 'application/json' -Body '{\"messageId\":\"alert-001\",\"from\":\"pagerduty@example.com\",\"subject\":\"[P1] payment-service HTTP 5xx Error Spike in prod-us-east-1\",\"body\":\"Alert triggered for payment-service on POST /api/v1/payments/charge. HTTP 5xx rate exceeded 34%, p99 latency > 5s, and HikariPool-1 connection timeouts observed.\"}' | ConvertTo-Json -Depth 6",
+      "problemMatcher": [],
+      "detail": "Sends a simulated P1 alert email for payment-service to http://localhost:8080/api/v1/webhooks/email"
+    }
+  ]
+}
