@@ -76,11 +76,11 @@ class SreInvestigationAgentServiceTest {
             publisher
         ) {
             @Override
-            protected AgentInvestigationResult executeAgentInvestigation(String investigationPrompt) {
+            protected AgentInvestigationResult executeAgentInvestigation(String investigationPrompt, String serviceName) {
                 // Simulate the LLM calling the tools during its investigation
-                observabilityTools.getServiceHealth("payment-service");
-                observabilityTools.getDatabaseConnectionPoolStats("payment-service");
-                observabilityTools.getRecentDeployments("payment-service");
+                observabilityTools.getServiceHealth("payment-service", null);
+                observabilityTools.getDatabaseConnectionPoolStats("payment-service", null);
+                observabilityTools.getRecentDeployments("payment-service", null);
 
                 return new AgentInvestigationResult(
                     observabilityTools.getRecordedSteps(),

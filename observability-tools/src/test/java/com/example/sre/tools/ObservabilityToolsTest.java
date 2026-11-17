@@ -20,10 +20,10 @@ class ObservabilityToolsTest {
 
     @Test
     void shouldReturnTelemetryAndRecordInvestigationStepsForPaymentService() {
-        String health = tools.getServiceHealth("payment-service");
-        String pool = tools.getDatabaseConnectionPoolStats("payment-service");
-        String logs = tools.queryServiceLogs("payment-service", "ERROR", 5);
-        String deployments = tools.getRecentDeployments("payment-service");
+        String health = tools.getServiceHealth("payment-service", null);
+        String pool = tools.getDatabaseConnectionPoolStats("payment-service", null);
+        String logs = tools.queryServiceLogs("payment-service", "ERROR", 5, null);
+        String deployments = tools.getRecentDeployments("payment-service", null);
 
         assertThat(health).contains("DEGRADED");
         assertThat(pool).contains("Active Connections: 20 / 20");
@@ -35,5 +35,17 @@ class ObservabilityToolsTest {
         assertThat(steps.get(0).stepNumber()).isEqualTo(1);
         assertThat(steps.get(0).toolUsed()).isEqualTo("getServiceHealth(payment-service)");
         assertThat(steps.get(1).toolUsed()).isEqualTo("getDatabaseConnectionPoolStats(payment-service)");
+    }
+
+    @Test
+    void shouldIgnoreLlmSuppliedServiceNameOutsideAllowedScope() {
+        var ctx = new org.springframework.ai.chat.model.ToolContext(
+            java.util.Map.of(ObservabilityTools.ALLOWED_SERVICE_KEY, "payment-service"));
+
+        // Injected instruction made the model ask for a different service
+        String health = tools.getServiceHealth("auth-service", ctx);
+
+        assertThat(health).contains("payment-service").doesNotContain("auth-service");
+        assertThat(tools.getRecordedSteps().get(0).toolUsed()).isEqualTo("getServiceHealth(payment-service)");
     }
 }
