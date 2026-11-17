@@ -3,6 +3,7 @@ package com.example.sre.tools;
 import com.example.sre.common.model.IncidentReport.InvestigationStep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class ObservabilityTools {
+
+    /** ToolContext key holding the single service the current investigation is allowed to inspect. */
+    public static final String ALLOWED_SERVICE_KEY = "allowedServiceName";
 
     private static final Logger log = LoggerFactory.getLogger(ObservabilityTools.class);
 
@@ -33,8 +37,12 @@ public class ObservabilityTools {
 
     @Tool(description = "Check current health status, pod readiness, restart count, and uptime of a service")
     public String getServiceHealth(
-            @ToolParam(description = "Name of the service, e.g. payment-service, order-service, auth-service") String serviceName) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Name of the service, e.g. payment-service, order-service, auth-service") String serviceName,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getServiceHealth(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -75,8 +83,12 @@ public class ObservabilityTools {
     @Tool(description = "Fetch key infrastructure, JVM, and HTTP metrics (CPU, memory, latency p95/p99, HTTP error rate) for a service")
     public String getServiceMetrics(
             @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
-            @ToolParam(description = "Time window, e.g. 15m, 1h") String window) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Time window, e.g. 15m, 1h") String window,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         String win = (window == null || window.isBlank()) ? "15m" : window.trim();
         log.info("[Tool] getServiceMetrics(serviceName={}, window={})", norm, win);
 
@@ -121,8 +133,12 @@ public class ObservabilityTools {
 
     @Tool(description = "Check database connection pool statistics (active, idle, waiting threads, connection timeouts) for a service")
     public String getDatabaseConnectionPoolStats(
-            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getDatabaseConnectionPoolStats(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -167,8 +183,12 @@ public class ObservabilityTools {
     public String queryServiceLogs(
             @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
             @ToolParam(description = "Log severity filter, e.g. ERROR or WARN") String severityFilter,
-            @ToolParam(description = "Maximum number of log entries to return") Integer limit) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Maximum number of log entries to return") Integer limit,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         String sev = (severityFilter == null || severityFilter.isBlank()) ? "ERROR" : severityFilter.toUpperCase();
         int max = (limit == null || limit <= 0) ? 10 : limit;
         log.info("[Tool] queryServiceLogs(serviceName={}, severityFilter={}, limit={})", norm, sev, max);
@@ -205,8 +225,12 @@ public class ObservabilityTools {
 
     @Tool(description = "Check recent deployments, release versions, and configuration changes for a service")
     public String getRecentDeployments(
-            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getRecentDeployments(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -241,8 +265,12 @@ public class ObservabilityTools {
 
     @Tool(description = "Check status, error rates, and latency of downstream dependencies and external APIs for a service")
     public String getDownstreamDependencyStatus(
-            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName) {
-        String norm = normalize(serviceName);
+            @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
+            ToolContext toolContext) {
+        String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getDownstreamDependencyStatus(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -277,6 +305,36 @@ public class ObservabilityTools {
     private void recordStep(String action, String toolUsed, String observation) {
         int stepNum = stepCounter.get().incrementAndGet();
         recordedSteps.get().add(new InvestigationStep(stepNum, action, toolUsed, observation));
+    }
+
+    static final String SCOPE_ERROR =
+        "ERROR: this tool may only be called for the service under investigation. "
+        + "The requested service was rejected; call the tool again with the alerted service name.";
+    static final String NO_SCOPE_ERROR =
+        "ERROR: no service is bound to this investigation, so the tool call was refused.";
+
+    /**
+     * Least-privilege scoping, fail closed: the server must bind the allowed service in the ToolContext.
+     * Returns the normalised allowed service when the LLM-supplied name matches it, otherwise null
+     * (the caller returns an explanatory error to the model instead of answering for another service).
+     */
+    private String resolveService(String requested, ToolContext toolContext) {
+        Object allowed = toolContext == null ? null : toolContext.getContext().get(ALLOWED_SERVICE_KEY);
+        if (!(allowed instanceof String allowedName) || allowedName.isBlank()) {
+            log.warn("SECURITY: tool call refused; no allowed service bound in ToolContext");
+            return null;
+        }
+        String allowedNorm = normalize(allowedName);
+        if (requested == null || !allowedNorm.equals(normalize(requested))) {
+            log.warn("SECURITY: tool call for out-of-scope service rejected; allowed service='{}'", allowedNorm);
+            return null;
+        }
+        return allowedNorm;
+    }
+
+    private String scopeError(ToolContext toolContext) {
+        Object allowed = toolContext == null ? null : toolContext.getContext().get(ALLOWED_SERVICE_KEY);
+        return allowed instanceof String a && !a.isBlank() ? SCOPE_ERROR : NO_SCOPE_ERROR;
     }
 
     private String normalize(String serviceName) {

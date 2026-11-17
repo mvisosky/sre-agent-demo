@@ -56,6 +56,29 @@ class AlertFloodControlServiceTest {
     }
 
     @Test
+    void blockedRequestLeavesNoStage1FingerprintBehind() {
+        EmailWebhookRequest email = new EmailWebhookRequest(
+            "msg-blocked", "alerts@example.com", "[P1] payment-service down", "body", testClock.instant(), Map.of());
+        AtomicInteger extractionCalls = new AtomicInteger();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> floodControlService.processWithFloodControl(
+            email,
+            e -> { extractionCalls.incrementAndGet(); throw new com.example.sre.agent.security.PromptInjectionException("override-instructions"); },
+            (e, info) -> { throw new AssertionError("investigation must not run"); }))
+            .isInstanceOf(com.example.sre.agent.security.PromptInjectionException.class);
+
+        assertThat(floodControlService.getStats().activeIncidents()).isEmpty();
+
+        // Retry is not suppressed by a poisoned slot: it reaches extraction again.
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> floodControlService.processWithFloodControl(
+            email,
+            e -> { extractionCalls.incrementAndGet(); throw new com.example.sre.agent.security.PromptInjectionException("override-instructions"); },
+            (e, info) -> { throw new AssertionError("investigation must not run"); }))
+            .isInstanceOf(com.example.sre.agent.security.PromptInjectionException.class);
+        assertThat(extractionCalls.get()).isEqualTo(2);
+    }
+
+    @Test
     void shouldSuppressIdenticalAndPodVariantFloodAtStage1WithZeroDuplicateLlmCalls() {
         AtomicInteger extractionCalls = new AtomicInteger(0);
         AtomicInteger investigationCalls = new AtomicInteger(0);

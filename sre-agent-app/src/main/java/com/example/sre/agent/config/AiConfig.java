@@ -1,11 +1,13 @@
 package com.example.sre.agent.config;
 
+import com.example.sre.agent.security.PromptGuardrailAdvisor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 
 import java.lang.reflect.Method;
 import java.time.Clock;
@@ -16,7 +18,9 @@ public class AiConfig {
 
     @Bean
     public ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
+        return builder
+            .defaultAdvisors(new PromptGuardrailAdvisor(Ordered.HIGHEST_PRECEDENCE + 100))
+            .build();
     }
 
     /**

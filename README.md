@@ -265,3 +265,12 @@ curl -i -X POST http://localhost:8080/api/v1/webhooks/email \
 curl http://localhost:8080/api/v1/webhooks/deduplication/stats
 curl http://localhost:8080/api/v1/reports
 ```
+
+## Prompt-injection defenses (defence in depth, not a complete control)
+
+Layers: `@SafeText`/`@Size` request validation, `UntrustedContent` fencing of untrusted text, `PromptGuardrailAdvisor`
+(scans only the raw email fence), playbook validation at ingest, and server-side tool scoping via `ToolContext`
+(tools fail closed and return an error if the requested service differs from the alerted one).
+The regex detector is heuristic: it can be evaded by paraphrase, other languages or homoglyphs, and may flag unusual
+but benign text. Fencing, role-tag/fence-spoof rules and tool scoping are the most reliable layers.
+Blocked requests return `400` (`PROMPT_INJECTION_BLOCKED` or `VALIDATION_FAILED`) without echoing the payload.

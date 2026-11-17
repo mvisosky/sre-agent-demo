@@ -2,6 +2,7 @@ package com.example.sre.playbook.service;
 
 import com.example.sre.common.model.PlaybookChunkResult;
 import com.example.sre.common.model.PlaybookIngestRequest;
+import com.example.sre.common.security.PromptInjectionDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -39,6 +40,14 @@ public class PlaybookRagService {
      * and stores them in the PGVector store.
      */
     public int ingestPlaybook(PlaybookIngestRequest request) {
+        // Enforced here (not only via @Valid on the controller) so PlaybookSeeder and other callers are covered too.
+        // Playbook text is later fed to the LLM as retrieved context, so reject injection payloads at ingest.
+        for (String field : new String[] {request.title(), request.version(), request.markdownContent()}) {
+            PromptInjectionDetector.detect(field).ifPresent(rule -> {
+                log.warn("SECURITY: playbook ingest rejected [rule={}]", rule);
+                throw new IllegalArgumentException("Playbook content rejected: suspected prompt-injection content");
+            });
+        }
         String normalizedService = normalizeServiceName(request.serviceName());
         log.info("Ingesting playbook '{}' (version {}) for service '{}'",
             request.title(), request.version(), normalizedService);
