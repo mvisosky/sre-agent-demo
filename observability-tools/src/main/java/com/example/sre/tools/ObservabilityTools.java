@@ -40,6 +40,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Name of the service, e.g. payment-service, order-service, auth-service") String serviceName,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getServiceHealth(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -83,6 +86,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Time window, e.g. 15m, 1h") String window,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         String win = (window == null || window.isBlank()) ? "15m" : window.trim();
         log.info("[Tool] getServiceMetrics(serviceName={}, window={})", norm, win);
 
@@ -130,6 +136,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getDatabaseConnectionPoolStats(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -177,6 +186,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Maximum number of log entries to return") Integer limit,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         String sev = (severityFilter == null || severityFilter.isBlank()) ? "ERROR" : severityFilter.toUpperCase();
         int max = (limit == null || limit <= 0) ? 10 : limit;
         log.info("[Tool] queryServiceLogs(serviceName={}, severityFilter={}, limit={})", norm, sev, max);
@@ -216,6 +228,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getRecentDeployments(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -253,6 +268,9 @@ public class ObservabilityTools {
             @ToolParam(description = "Name of the service, e.g. payment-service") String serviceName,
             ToolContext toolContext) {
         String norm = resolveService(serviceName, toolContext);
+        if (norm == null) {
+            return scopeError(toolContext);
+        }
         log.info("[Tool] getDownstreamDependencyStatus(serviceName={})", norm);
 
         String result = switch (norm) {
@@ -289,21 +307,34 @@ public class ObservabilityTools {
         recordedSteps.get().add(new InvestigationStep(stepNum, action, toolUsed, observation));
     }
 
+    static final String SCOPE_ERROR =
+        "ERROR: this tool may only be called for the service under investigation. "
+        + "The requested service was rejected; call the tool again with the alerted service name.";
+    static final String NO_SCOPE_ERROR =
+        "ERROR: no service is bound to this investigation, so the tool call was refused.";
+
     /**
-     * Least-privilege scoping: when the server bound an allowed service in the ToolContext, the
-     * LLM-supplied serviceName is ignored if it differs (prompt-injected cross-service queries).
+     * Least-privilege scoping, fail closed: the server must bind the allowed service in the ToolContext.
+     * Returns the normalised allowed service when the LLM-supplied name matches it, otherwise null
+     * (the caller returns an explanatory error to the model instead of answering for another service).
      */
     private String resolveService(String requested, ToolContext toolContext) {
-        String requestedNorm = normalize(requested);
-        if (toolContext != null && toolContext.getContext().get(ALLOWED_SERVICE_KEY) instanceof String allowed
-                && !allowed.isBlank()) {
-            String allowedNorm = normalize(allowed);
-            if (!allowedNorm.equals(requestedNorm)) {
-                log.warn("SECURITY: tool call for out-of-scope service rejected; using allowed service='{}'", allowedNorm);
-            }
-            return allowedNorm;
+        Object allowed = toolContext == null ? null : toolContext.getContext().get(ALLOWED_SERVICE_KEY);
+        if (!(allowed instanceof String allowedName) || allowedName.isBlank()) {
+            log.warn("SECURITY: tool call refused; no allowed service bound in ToolContext");
+            return null;
         }
-        return requestedNorm;
+        String allowedNorm = normalize(allowedName);
+        if (requested == null || !allowedNorm.equals(normalize(requested))) {
+            log.warn("SECURITY: tool call for out-of-scope service rejected; allowed service='{}'", allowedNorm);
+            return null;
+        }
+        return allowedNorm;
+    }
+
+    private String scopeError(ToolContext toolContext) {
+        Object allowed = toolContext == null ? null : toolContext.getContext().get(ALLOWED_SERVICE_KEY);
+        return allowed instanceof String a && !a.isBlank() ? SCOPE_ERROR : NO_SCOPE_ERROR;
     }
 
     private String normalize(String serviceName) {

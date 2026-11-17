@@ -14,15 +14,22 @@ import org.springframework.ai.chat.messages.MessageType;
 import reactor.core.publisher.Flux;
 
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Inspects user-role messages (never the trusted system prompt) before they reach the LLM and
+ * Inspects the raw email payload inside user-role messages (never the trusted system prompt, playbooks or extracted fields) before they reach the LLM and
  * blocks known injection / jailbreak / delimiter-spoofing patterns. Logs only the rule name,
  * never the payload, to avoid leaking PII or attacker-controlled log content.
  */
 public class PromptGuardrailAdvisor implements CallAdvisor, StreamAdvisor {
 
     private static final Logger log = LoggerFactory.getLogger(PromptGuardrailAdvisor.class);
+
+    /** Matches the raw-email fence emitted by {@code UntrustedContent.wrap("email", ...)}. */
+    private static final Pattern EMAIL_FENCE =
+        Pattern.compile("<untrusted-email>\\n(.*?)\\n</untrusted-email>", Pattern.DOTALL);
 
     private final int order;
 
@@ -51,11 +58,21 @@ public class PromptGuardrailAdvisor implements CallAdvisor, StreamAdvisor {
             if (message.getMessageType() != MessageType.USER) {
                 continue;
             }
-            Optional<String> rule = PromptInjectionDetector.detect(message.getText());
-            if (rule.isPresent()) {
-                log.warn("SECURITY: prompt blocked by guardrail [rule={}, length={}]",
-                    rule.get(), message.getText() == null ? 0 : message.getText().length());
-                throw new PromptInjectionException(rule.get());
+            String text = message.getText();
+            if (text == null) {
+                continue;
+            }
+            // Only the raw email is attacker-controlled. Alert-context fields are Claude-extracted from an
+            // already-scanned email and playbooks are validated at ingest, so scanning them here would
+            // reject legitimate runbook phrasing. The app's own fence tags are not an attack, and
+            // UntrustedContent.wrap already neutralises spoofed ones inside the payload.
+            Matcher m = EMAIL_FENCE.matcher(text);
+            while (m.find()) {
+                Optional<String> rule = PromptInjectionDetector.detect(m.group(1), Set.of(PromptInjectionDetector.FENCE_RULE));
+                if (rule.isPresent()) {
+                    log.warn("SECURITY: prompt blocked by guardrail [rule={}, length={}]", rule.get(), text.length());
+                    throw new PromptInjectionException(rule.get());
+                }
             }
         }
     }

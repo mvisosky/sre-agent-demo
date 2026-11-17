@@ -78,9 +78,11 @@ class SreInvestigationAgentServiceTest {
             @Override
             protected AgentInvestigationResult executeAgentInvestigation(String investigationPrompt, String serviceName) {
                 // Simulate the LLM calling the tools during its investigation
-                observabilityTools.getServiceHealth("payment-service", null);
-                observabilityTools.getDatabaseConnectionPoolStats("payment-service", null);
-                observabilityTools.getRecentDeployments("payment-service", null);
+                var scope = new org.springframework.ai.chat.model.ToolContext(
+                    Map.of(ObservabilityTools.ALLOWED_SERVICE_KEY, serviceName));
+                observabilityTools.getServiceHealth("payment-service", scope);
+                observabilityTools.getDatabaseConnectionPoolStats("payment-service", scope);
+                observabilityTools.getRecentDeployments("payment-service", scope);
 
                 return new AgentInvestigationResult(
                     observabilityTools.getRecordedSteps(),

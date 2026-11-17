@@ -189,12 +189,16 @@ public class SreInvestigationAgentService {
     }
 
     protected AgentInvestigationResult executeAgentInvestigation(String investigationPrompt, String serviceName) {
+        // Server-side scope: tools may only inspect the alerted service, regardless of LLM arguments.
+        // A missing service name binds nothing, so every tool call fails closed.
+        Map<String, Object> toolScope = (serviceName == null || serviceName.isBlank())
+            ? Map.of()
+            : Map.of(ObservabilityTools.ALLOWED_SERVICE_KEY, serviceName);
         return chatClient.prompt()
             .system(INVESTIGATION_SYSTEM_PROMPT)
             .user(investigationPrompt)
             .tools(observabilityTools)
-            // Server-side scope: tools may only inspect the alerted service, regardless of LLM arguments.
-            .toolContext(Map.of(ObservabilityTools.ALLOWED_SERVICE_KEY, String.valueOf(serviceName)))
+            .toolContext(toolScope)
             .call()
             .entity(AgentInvestigationResult.class);
     }
