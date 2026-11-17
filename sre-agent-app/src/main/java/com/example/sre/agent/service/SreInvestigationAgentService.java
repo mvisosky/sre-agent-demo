@@ -117,7 +117,7 @@ public class SreInvestigationAgentService {
                 .map(c -> "### Playbook: " + c.title() + "\n" + c.content())
                 .collect(Collectors.joining("\n\n---\n\n"));
 
-        // Run tool-assisted investigation with Gemini following the playbook
+        // Run tool-assisted investigation with Claude following the playbook
         observabilityTools.resetTrace();
         try {
             String investigationPrompt = """

@@ -17,7 +17,7 @@
     <packaging>pom</packaging>
 
     <name>sre-agent-demo</name>
-    <description>Multi-module SRE Agent powered by Spring AI 2.0.2 and Google Gemini on Spring Boot 4.1.2 (Java 25)</description>
+    <description>Multi-module SRE Agent powered by Spring AI 2.0.2 and Anthropic Claude on Spring Boot 4.1.2 (Java 25)</description>
 
     <modules>
         <module>sre-common</module>

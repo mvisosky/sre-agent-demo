@@ -12,7 +12,7 @@
 
     <artifactId>sre-agent-app</artifactId>
     <name>sre-agent-app</name>
-    <description>Spring Boot SRE Agent Application with Email Webhook, Gemini Agent, and Local Report Publisher</description>
+    <description>Spring Boot SRE Agent Application with Email Webhook, Claude Agent, and Local Report Publisher</description>
 
     <dependencies>
         <dependency>

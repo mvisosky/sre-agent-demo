@@ -71,7 +71,7 @@ public class AlertFloodControlService {
      *
      * @param emailRequest Raw incoming webhook email
      * @param extractor    Stage 1 -> Stage 2 LLM metadata extractor
-     * @param investigator Primary RAG + Gemini tool-calling investigator
+     * @param investigator Primary RAG + Claude tool-calling investigator
      * @return Primary IncidentReport (deduplicated=false) or correlated IncidentReport (deduplicated=true)
      */
     public IncidentReport processWithFloodControl(
@@ -118,7 +118,7 @@ public class AlertFloodControlService {
             }
         }
 
-        // Stage 1 MISS (Leader): Extract structured alert metadata via Gemini
+        // Stage 1 MISS (Leader): Extract structured alert metadata via Claude
         try {
             ExtractedAlertInfo alertInfo = extractor.apply(emailRequest);
             String serviceScopeKey = fingerprinter.computeServiceScopeKey(alertInfo);
@@ -140,7 +140,7 @@ public class AlertFloodControlService {
                     return matchedStage2.recordCorrelatedHit(emailRequest, STAGE_2_MATCH, afterExtractNow);
                 }
 
-                // Stage 2 MISS: Execute full primary RAG + Gemini tool investigation
+                // Stage 2 MISS: Execute full primary RAG + Claude tool investigation
                 primaryInvestigationsTriggered.incrementAndGet();
                 IncidentReport primaryReport = investigator.apply(emailRequest, alertInfo);
                 Instant completedNow = clock.instant();
