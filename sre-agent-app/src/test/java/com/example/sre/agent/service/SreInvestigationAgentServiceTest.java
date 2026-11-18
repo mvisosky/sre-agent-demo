@@ -55,7 +55,7 @@ class SreInvestigationAgentServiceTest {
             }
         };
 
-        PlaybookRagService fakeRagService = new PlaybookRagService(null) {
+        PlaybookRagService fakeRagService = new PlaybookRagService(null, null) {
             @Override
             public List<PlaybookChunkResult> queryPlaybooksForService(String serviceName, String symptomQuery, int topK) {
                 return List.of(new PlaybookChunkResult(

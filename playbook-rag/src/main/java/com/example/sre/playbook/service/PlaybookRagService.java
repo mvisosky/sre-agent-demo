@@ -6,7 +6,8 @@ import com.example.sre.common.security.PromptInjectionDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import com.example.sre.playbook.indexing.IncrementalDocumentIndexer;
+import com.example.sre.playbook.indexing.SyncResult;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
@@ -28,11 +29,11 @@ public class PlaybookRagService {
     public static final String META_INGESTED_AT = "ingestedAt";
 
     private final VectorStore vectorStore;
-    private final TokenTextSplitter textSplitter;
+    private final IncrementalDocumentIndexer indexer;
 
-    public PlaybookRagService(VectorStore vectorStore) {
+    public PlaybookRagService(VectorStore vectorStore, IncrementalDocumentIndexer indexer) {
         this.vectorStore = vectorStore;
-        this.textSplitter = new TokenTextSplitter();
+        this.indexer = indexer;
     }
 
     /**
@@ -53,17 +54,14 @@ public class PlaybookRagService {
             request.title(), request.version(), normalizedService);
 
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put(META_SERVICE_NAME, normalizedService);
         metadata.put(META_TITLE, request.title());
         metadata.put(META_VERSION, request.version());
         metadata.put(META_INGESTED_AT, Instant.now().toString());
 
-        Document sourceDoc = new Document(request.markdownContent(), metadata);
-        List<Document> chunks = textSplitter.apply(List.of(sourceDoc));
-
-        vectorStore.add(chunks);
-        log.info("Stored {} vector chunks for service '{}'", chunks.size(), normalizedService);
-        return chunks.size();
+        // Incremental: only new/changed sections are embedded; removed sections are deleted. Safe to call repeatedly.
+        SyncResult result = indexer.syncDocument(META_SERVICE_NAME, normalizedService, request.markdownContent(), metadata);
+        log.info("Playbook sync for service '{}': {}", normalizedService, result);
+        return result.total();
     }
 
     /**

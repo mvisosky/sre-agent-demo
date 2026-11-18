@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.example.sre.playbook.service",
     "com.example.sre.playbook.controller",
     "com.example.sre.playbook.config",
+    "com.example.sre.playbook.indexing",
     "com.example.sre.tools"
 })
 public class SreAgentApplication {

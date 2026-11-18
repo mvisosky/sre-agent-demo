@@ -8,7 +8,8 @@ import java.util.Map;
 @SpringBootApplication(scanBasePackages = {
     "com.example.sre.playbook.service",
     "com.example.sre.playbook.controller",
-    "com.example.sre.playbook.config"
+    "com.example.sre.playbook.config",
+    "com.example.sre.playbook.indexing"
 })
 public class PlaybookRagApplication {
 
