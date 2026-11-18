@@ -2,6 +2,7 @@ package com.example.sre.playbook.service;
 
 import com.example.sre.common.model.PlaybookChunkResult;
 import com.example.sre.common.model.PlaybookIngestRequest;
+import com.example.sre.playbook.indexing.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -19,7 +20,7 @@ class PlaybookRagServiceTest {
     @Test
     void shouldIngestPlaybookWithServiceMetadata() {
         InMemoryTestVectorStore vectorStore = new InMemoryTestVectorStore();
-        PlaybookRagService ragService = new PlaybookRagService(vectorStore);
+        PlaybookRagService ragService = new PlaybookRagService(vectorStore, new IncrementalDocumentIndexer(vectorStore, new InMemoryChunkHashRepository(), new MarkdownSectionSplitter()));
 
         PlaybookIngestRequest request = new PlaybookIngestRequest(
             "Payment-Service",
@@ -46,7 +47,7 @@ class PlaybookRagServiceTest {
             Map.of("serviceName", "payment-service", "title", "Payment Runbook")
         ));
 
-        PlaybookRagService ragService = new PlaybookRagService(vectorStore);
+        PlaybookRagService ragService = new PlaybookRagService(vectorStore, new IncrementalDocumentIndexer(vectorStore, new InMemoryChunkHashRepository(), new MarkdownSectionSplitter()));
 
         List<PlaybookChunkResult> results = ragService.queryPlaybooksForService(
             "payment-service", "HTTP 500 timeout", 3);
