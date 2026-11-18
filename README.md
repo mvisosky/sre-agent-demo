@@ -38,6 +38,8 @@ flowchart TD
     subgraph RAG["4. Playbook RAG Store"]
         PlaybookCtrl --> PlaybookSvc
         PlaybookSeeder --> PlaybookSvc
+        PlaybookSvc -->|"Hash-diff sections"| Indexer["IncrementalDocumentIndexer + MarkdownSectionSplitter"]
+        Indexer -->|"Embed/add changed, delete stale"| PGVector
         PlaybookSvc <-->|"Local ONNX Embeddings (all-MiniLM-L6-v2, 384d)"| PGVector[("PostgreSQL 16 + PGVector (or Local SimpleVectorStore)")]
     end
 
@@ -153,7 +155,7 @@ During a production incident ("alert storm"), monitoring systems often emit doze
 ## Project Structure
 
 - **`sre-common`**: Shared domain records (`EmailWebhookRequest`, `ExtractedAlertInfo`, `PlaybookIngestRequest`, `PlaybookChunkResult`, `AgentInvestigationResult`, `IncidentReport` with `CorrelatedAlert` flood timeline metadata).
-- **`playbook-rag`**: Playbook RAG ingestion and semantic retrieval backed by **PostgreSQL + PGVector** (`spring-ai-starter-vector-store-pgvector`) and **Local ONNX Transformers Embeddings** (`spring-ai-starter-model-transformers`, bundled `all-MiniLM-L6-v2` with `384` dimensions), plus a `local` profile fallback (`SimpleVectorStore`) and built-in playbooks (`payment-service`, `order-service`, `auth-service`).
+- **`playbook-rag`**: Playbook RAG ingestion and semantic retrieval backed by **PostgreSQL + PGVector** (`spring-ai-starter-vector-store-pgvector`) and **Local ONNX Transformers Embeddings** (`spring-ai-starter-model-transformers`, bundled `all-MiniLM-L6-v2` with `384` dimensions), plus a `local` profile fallback (`SimpleVectorStore`) and built-in playbooks (`payment-service`, `order-service`, `auth-service`). Ingestion is incremental (see [Incremental Playbook Indexing](#incremental-playbook-indexing)).
 - **`observability-tools`**: Spring AI `@Tool` functions (`ObservabilityTools`) providing simulated observability & infrastructure checks (`getServiceHealth`, `getServiceMetrics`, `getDatabaseConnectionPoolStats`, `queryServiceLogs`, `getRecentDeployments`, `getDownstreamDependencyStatus`).
 - **`sre-agent-app`**: Spring Boot application exposing the email webhook, two-stage alert flood control (`AlertFloodControlService`, `AlertFingerprinter`, `AlertDeduplicationProperties`), playbook ingestion/search endpoints, Anthropic Claude investigation agent orchestrator (`spring-ai-starter-model-anthropic`), and local filesystem report publisher (`./reports/`).
 
@@ -166,7 +168,7 @@ During a production incident ("alert storm"), monitoring systems often emit doze
 | `POST` | `/api/v1/webhooks/email` | Receive an alert email, run Two-Stage Flood Control, and execute or correlate an SRE investigation. Returns `IncidentReport` and headers `X-SRE-Alert-Deduplicated`, `X-SRE-Primary-Incident-Id`, and `X-SRE-Alert-Occurrences`. |
 | `GET` | `/api/v1/webhooks/deduplication/stats` | Inspect active incident suppression windows, `totalAlertsReceived`, `primaryInvestigationsTriggered`, `stage1SuppressedCount`, and `stage2SuppressedCount`. |
 | `DELETE` | `/api/v1/webhooks/deduplication/cache` | Clear all active deduplication windows and reset flood counters (useful when re-running demos). |
-| `POST` | `/api/v1/playbooks/ingest` | Ingest or update a Markdown service playbook into the Vector Store. |
+| `POST` | `/api/v1/playbooks/ingest` | Ingest or update a Markdown service playbook. Incremental and idempotent: only new/changed sections are embedded and removed sections are deleted. Injection-style content is rejected with `400`. |
 | `GET` | `/api/v1/playbooks/search` | Query playbook chunks via semantic search (`?serviceName=...&query=...&topK=4`). |
 | `GET` | `/api/v1/reports` | List generated `.md` and `.json` incident reports in `./reports/`. |
 | `GET` | `/api/v1/reports/{filename}` | View a specific Markdown or JSON incident report. |
@@ -181,6 +183,8 @@ During a production incident ("alert storm"), monitoring systems often emit doze
 | `spring.ai.anthropic.chat.model` | `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | Anthropic Claude model for extraction & tool investigation |
 | `spring.ai.vectorstore.pgvector.dimensions` | — | `384` | Vector dimension matching the bundled `all-MiniLM-L6-v2` ONNX embedding model |
 | `sre.playbook.seed-on-startup` | `SRE_SEED_PLAYBOOKS` | `true` | Seed built-in playbooks (`payment-service`, `order-service`, `auth-service`) on startup |
+| `sre.playbook.document-key` | — | `serviceName` | Metadata key identifying a document's chunks for incremental sync (and the pgvector expression index) |
+| `spring.ai.vectorstore.pgvector.table-name` | — | `vector_store` | pgvector table used by the chunk-hash repository and index initializer |
 | `sre.agent.reports-dir` | `SRE_REPORTS_DIR` | `./reports` | Local directory where `.md` and `.json` incident reports are saved |
 | `sre.agent.deduplication.enabled` | `SRE_DEDUP_ENABLED` | `true` | Enable/disable two-stage alert flood deduplication |
 | `sre.agent.deduplication.window` | `SRE_DEDUP_WINDOW` | `15m` | Active incident suppression TTL window |
@@ -268,9 +272,29 @@ curl http://localhost:8080/api/v1/reports
 
 ## Prompt-injection defenses (defence in depth, not a complete control)
 
-Layers: `@SafeText`/`@Size` request validation, `UntrustedContent` fencing of untrusted text, `PromptGuardrailAdvisor`
-(scans only the raw email fence), playbook validation at ingest, and server-side tool scoping via `ToolContext`
-(tools fail closed and return an error if the requested service differs from the alerted one).
+Untrusted text (alert emails, playbook content, tool arguments) is treated as data, never as instructions. Layers:
+
+| Layer | Component | What it does |
+|---|---|---|
+| Input validation | `@SafeText` / `@Size` on `EmailWebhookRequest` and `PlaybookIngestRequest` (`sre-common`, `PromptInjectionDetector`) | Rejects oversized input and injection patterns (instruction overrides, role-tag and fence spoofing) before any LLM call |
+| Fencing | `UntrustedContent` | Wraps untrusted text in delimiters in prompts so the model can tell data from instructions |
+| Guardrail advisor | `PromptGuardrailAdvisor` (`AiConfig`) | Scans only the raw email fence of the outgoing prompt (not app prompts, playbooks or extracted fields), on call and stream paths |
+| Playbook validation | `PlaybookRagService` ingest | Validates playbooks at ingest, which also covers the built-in seeder |
+| Tool scoping | `ObservabilityTools` via Spring AI `ToolContext` | Server-side scoping to the alerted service; tools fail closed and return an error to the model if the requested service differs |
+
+Blocked requests return `400` with code `PROMPT_INJECTION_BLOCKED` or `VALIDATION_FAILED` (via `SecurityExceptionHandler`) and never echo the payload.
+
 The regex detector is heuristic: it can be evaded by paraphrase, other languages or homoglyphs, and may flag unusual
 but benign text. Fencing, role-tag/fence-spoof rules and tool scoping are the most reliable layers.
-Blocked requests return `400` (`PROMPT_INJECTION_BLOCKED` or `VALIDATION_FAILED`) without echoing the payload.
+
+## Incremental Playbook Indexing
+
+Playbook ingestion (`PlaybookRagService.ingestPlaybook`, used by `POST /api/v1/playbooks/ingest` and the startup seeder) goes through `IncrementalDocumentIndexer`, so re-ingesting an edited playbook only embeds what changed:
+
+1. **Boundary-aware splitting**: `MarkdownSectionSplitter` splits on headings (levels 1-3) and horizontal rules, ignoring fenced code blocks. Each chunk depends only on its own section, so an edit never shifts other chunks. Sections over 3000 chars are sub-chunked with `TokenTextSplitter`.
+2. **Hash diff**: each chunk gets a SHA-256 `content_hash` (stored in metadata with `chunk_index` and `section`) and a deterministic id derived from `serviceName` + hash. The indexer compares these with the chunks already stored for that service.
+3. **Apply the delta**: unchanged chunks are left alone (no embedding, no writes), new or modified chunks are added, and stale chunks are deleted. Adds run before deletes so a failed embedding call never loses existing data. Duplicate sections within one file collapse to one chunk.
+4. **Result and concurrency**: a `SyncResult(added, unchanged, deleted)` is logged per sync, and ingest returns the resulting chunk total. Syncs of the same document are serialized with a per-document lock.
+5. **Force re-index**: `reindexDocument(...)` drops and re-embeds every chunk of a document (e.g. after changing the embedding model). It is a service-level method, not exposed over REST.
+
+Storage: with PGVector, `JdbcChunkHashRepository` reads ids and hashes straight from the vector table, and `VectorStoreIndexInitializer` creates a B-tree expression index on `metadata->>'serviceName'` at startup. Under the `local` profile, `InMemoryChunkHashRepository` is used (hashes are lost on restart, like `SimpleVectorStore`).
